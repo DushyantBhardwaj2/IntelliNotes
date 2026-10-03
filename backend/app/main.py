@@ -1,3 +1,4 @@
+import re
 import warnings
 
 warnings.filterwarnings("ignore", message=".*automatic function calling.*")
@@ -6,7 +7,7 @@ from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
 
-from app.agent.graph import get_graph
+from app.agent.graph import get_checkpointer, get_graph
 from app.config import settings
 from app.ingestion import vectorstore
 from app.ingestion.loader import load_pdf_chunks
@@ -14,6 +15,7 @@ from app.security import (
     client_identity,
     make_chat_limiter,
     make_upload_limiter,
+    redact_secrets,
     require_api_key,
     sanitize_detail,
 )
@@ -41,6 +43,14 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type", "X-API-Key"],
 )
+
+@app.on_event("startup")
+def startup_event():
+    try:
+        get_checkpointer()
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).warning("Startup checkpointer initialization notice: %s", exc)
 
 chat_limiter = make_chat_limiter()
 upload_limiter = make_upload_limiter()
@@ -72,6 +82,9 @@ def health():
 
 @app.post("/chat/", response_model=ChatResponse, dependencies=[Depends(require_api_key)])
 def chat(request: ChatRequest, request_obj: Request):
+    # Per-IP limiting. With a single shared API key behind a server-side
+    # frontend proxy, the client IP (X-Forwarded-For aware) is the real
+    # differentiator — keying by the shared key would create one global bucket.
     chat_limiter.check(client_identity(request_obj))
     try:
         graph = get_graph()
@@ -92,7 +105,7 @@ def chat(request: ChatRequest, request_obj: Request):
         session_id=request.session_id,
         answer=result.get("answer", ""),
         grounding_verdict=result.get("grounding_verdict"),
-        trace=result.get("trace", []),
+        trace=redact_secrets(result.get("trace", [])),
     )
 
 
@@ -102,10 +115,11 @@ def chat(request: ChatRequest, request_obj: Request):
     dependencies=[Depends(require_api_key)],
 )
 def upload_document(request: Request, file: UploadFile = File(...)):
-    upload_limiter.check(client_identity(request))
     filename = file.filename or "document.pdf"
-    if not filename.lower().endswith(".pdf"):
+    # Strict check: reject paths, hidden files, multiple extensions, non-pdf
+    if not re.fullmatch(r"[a-zA-Z0-9_\-][^/\\:]*\.pdf", filename, flags=re.IGNORECASE):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+    upload_limiter.check(client_identity(request))
 
     max_bytes = settings.max_upload_mb * 1024 * 1024
     pdf_bytes = file.file.read(max_bytes + 1)
@@ -136,7 +150,7 @@ def upload_document(request: Request, file: UploadFile = File(...)):
     )
 
 
-@app.get("/documents", response_model=list[DocumentInfo])
+@app.get("/documents", response_model=list[DocumentInfo], dependencies=[Depends(require_api_key)])
 def documents():
     return vectorstore.list_documents()
 

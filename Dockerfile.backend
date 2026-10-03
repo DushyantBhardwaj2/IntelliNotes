@@ -20,7 +20,7 @@ COPY backend/app ./app
 # under DATA_DIR/data (same layout as a local checkout). Mount a volume here
 # or uploads vanish on restart.
 ENV DATA_DIR=/srv
-RUN mkdir -p /srv/data && chown -R nobody:nogroup /srv/data
+RUN mkdir -p /srv/data /data && chown -R nobody:nogroup /srv/data /data && chmod 777 /data
 VOLUME /srv/data
 USER nobody
 
@@ -28,4 +28,4 @@ EXPOSE 8000
 
 # --workers 1 is required: SQLite checkpointing and file-backed ChromaDB are
 # not safe for multi-process access. Scale vertically or shard instead.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]

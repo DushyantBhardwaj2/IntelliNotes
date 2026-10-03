@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import os
 import threading
 from typing import Any
 
@@ -13,11 +12,31 @@ _STORE_LOCK = threading.Lock()
 _VECTORSTORE: Chroma | None = None
 
 
+def _clean_env() -> dict[str, str]:
+    """Chroma telemetry env with posthog/anonymized-telemetry fully disabled."""
+    return {
+        "ANONYMIZED_TELEMETRY": "False",
+        "ALLOW_CHROMA_TELEMETRY_RECORDING": "False",
+        "POSTHOG_API_KEY": "",
+        "POSTHOG_HOST": "",
+    }
+
+
+def _telemetry_off() -> None:
+    """Force-disable Chroma telemetry before its client can initialize."""
+    for key, value in _clean_env().items():
+        if value:
+            os.environ[key] = value
+        else:
+            os.environ.pop(key, None)
+
+
 def get_vectorstore() -> Chroma:
     global _VECTORSTORE
     if _VECTORSTORE is None:
         with _STORE_LOCK:
             if _VECTORSTORE is None:
+                _telemetry_off()
                 _VECTORSTORE = Chroma(
                     collection_name=settings.collection_name,
                     embedding_function=get_embeddings(),

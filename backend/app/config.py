@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # Shared secret required as "X-API-Key" header on mutating/expensive
     # endpoints. Empty string disables auth (local development default).
     api_key: str = ""
+    # Database URL for PostgreSQL / Neon conversation memory (optional)
+    database_url: str = ""
     # Comma-separated list of browser origins allowed to call the API.
     cors_origins: str = ""
     # Per-IP request limits for rate-limited endpoints (0 disables limiting).

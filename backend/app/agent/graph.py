@@ -1,4 +1,6 @@
+import os
 import sqlite3
+from typing import Any
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
@@ -57,21 +59,50 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
     return builder.compile(checkpointer=checkpointer)
 
 
-def get_checkpointer() -> SqliteSaver:
-    """Create the SQLite checkpointer backing persistent conversation memory.
+_CHECKPOINTER: Any | None = None
+_PG_POOL: Any | None = None
+_PG_SETUP_DONE: bool = False
 
-    Thread-safety: the connection uses ``check_same_thread=False`` on purpose.
-    SqliteSaver serializes every database operation behind an internal
-    ``threading.Lock`` and enables WAL journaling during ``setup()``, so
-    concurrent FastAPI threadpool workers sharing this single-process saver
-    cannot interleave low-level reads/writes. Note that running multiple
-    *processes* (e.g. ``uvicorn --workers 4``) against the same SQLite file
-    is not supported; swap in PostgresSaver for multi-worker deployments.
+
+def get_checkpointer() -> Any:
+    """Create the checkpointer backing persistent conversation memory.
+
+    When DATABASE_URL is configured (e.g. Neon in production), PostgresSaver
+    is used with connection pooling and idempotent setup.
+    Otherwise, returns SqliteSaver for local development and tests.
     """
+    global _CHECKPOINTER, _PG_POOL, _PG_SETUP_DONE
+    if _CHECKPOINTER is not None:
+        return _CHECKPOINTER
+
+    db_url = settings.database_url.strip() or os.environ.get("DATABASE_URL", "").strip()
+    if db_url:
+        from langgraph.checkpoint.postgres import PostgresSaver
+        from psycopg.rows import dict_row
+        from psycopg_pool import ConnectionPool
+
+        _PG_POOL = ConnectionPool(
+            conninfo=db_url,
+            max_size=10,
+            kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+        )
+        saver = PostgresSaver(_PG_POOL)
+        if not _PG_SETUP_DONE:
+            try:
+                saver.setup()
+                _PG_SETUP_DONE = True
+            except Exception as exc:  # noqa: BLE001
+                import logging
+                logging.getLogger(__name__).warning("PostgresSaver setup check: %s", exc)
+                _PG_SETUP_DONE = True
+        _CHECKPOINTER = saver
+        return _CHECKPOINTER
+
     connection = sqlite3.connect(
         str(settings.memory_db_path), check_same_thread=False
     )
-    return SqliteSaver(connection)
+    _CHECKPOINTER = SqliteSaver(connection)
+    return _CHECKPOINTER
 
 
 _GRAPH: CompiledStateGraph | None = None
@@ -82,3 +113,4 @@ def get_graph() -> CompiledStateGraph:
     if _GRAPH is None:
         _GRAPH = build_graph(checkpointer=get_checkpointer())
     return _GRAPH
+

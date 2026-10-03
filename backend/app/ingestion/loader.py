@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -9,7 +10,14 @@ from pypdf import PdfReader
 
 from app.config import settings
 
+logger = logging.getLogger("intellinotes.loader")
+
 MIN_TEXT_LENGTH = 30
+
+# Resource limits for untrusted PDF uploads.
+MAX_PDF_PAGES = 400
+MAX_PDF_FILE_MB = 50
+MAX_PAGE_TEXT_CHARS = 200_000  # per page; defeats ZIP-bomb-style extracted text
 
 
 @dataclass
@@ -27,13 +35,37 @@ def clean_text(text: str) -> str:
 
 def extract_pdf_pages(pdf_bytes: bytes) -> list[tuple[int, str]]:
     """Extract clean text for each page of the PDF as (page_number, text).
-    
-    Page numbers are 1-indexed.
+
+    Page numbers are 1-indexed. Enforces page-count and page-text-size limits
+    so a crafted or absurdly large PDF cannot exhaust memory or embedding quota.
     """
+    if len(pdf_bytes) > MAX_PDF_FILE_MB * 1024 * 1024:
+        raise ValueError(
+            f"PDF exceeds the internal {MAX_PDF_FILE_MB} MB processing limit."
+        )
+
     reader = PdfReader(io.BytesIO(pdf_bytes))
+    page_count = len(reader.pages)
+    if page_count > MAX_PDF_PAGES:
+        raise ValueError(
+            f"PDF has {page_count} pages; the limit is {MAX_PDF_PAGES}. "
+            "Split the document and upload the relevant parts."
+        )
+
     extracted = []
     for idx, page in enumerate(reader.pages, start=1):
-        raw_text = page.extract_text() or ""
+        try:
+            raw_text = page.extract_text() or ""
+        except Exception as exc:  # noqa: BLE001 - hostile/corrupt PDF content
+            # A single malformed page must not crash the whole upload;
+            # skip it and let the sparse-text checks judge the remainder.
+            logger.warning("Skipping unreadable PDF page %d: %s", idx, exc)
+            continue
+        if len(raw_text) > MAX_PAGE_TEXT_CHARS:
+            raise ValueError(
+                f"Page {idx} contains too much text to process "
+                f"(>{MAX_PAGE_TEXT_CHARS} characters)."
+            )
         cleaned = clean_text(raw_text)
         if cleaned:
             extracted.append((idx, cleaned))
@@ -86,6 +118,13 @@ def load_pdf_chunks(
 ) -> list[Chunk]:
     """Parse PDF bytes into page-tagged chunks with rich metadata."""
     doc_id = doc_id or uuid.uuid4().hex
+
+    # The filename flows into chunk metadata and is echoed back in answers,
+    # traces, and the UI. Strip any path components a client may attach.
+    filename = filename.replace("\\", "/").split("/")[-1].strip() or "document.pdf"
+    while filename.startswith("."):
+        filename = filename.lstrip(".").strip() or "document.pdf"
+
     pages = extract_pdf_pages(pdf_bytes)
 
     total_chars = sum(len(text) for _, text in pages)

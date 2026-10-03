@@ -14,4 +14,7 @@ langchain-chroma==1.1.0
 chromadb==1.5.9
 langgraph==1.2.11
 langgraph-checkpoint-sqlite==3.1.1
+langgraph-checkpoint-postgres==3.1.2
+psycopg[binary]==3.3.6
+psycopg-pool==3.3.3
 tavily-python==0.8.1

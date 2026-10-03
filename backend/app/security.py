@@ -9,8 +9,10 @@ All three are inert by default so local development remains friction-free:
 
 import logging
 import os
+import re
 import time
 from collections import defaultdict, deque
+from typing import Any
 
 from fastapi import Header, HTTPException, Request, status
 
@@ -117,3 +119,49 @@ def sanitize_detail(exc: Exception) -> str:
     """Server-side log of the full error; client gets a generic 503 message."""
     logger.exception("Agent invocation failed: %s", exc)
     return "The agent could not process this request. Please try again later."
+
+
+# --- Secret redaction for anything echoed back to clients (agent traces) ----
+
+# Concrete, high-confidence credential shapes. Deliberately narrow so that
+# ordinary content (quota messages, document text) is never mangled.
+_SECRET_PATTERNS = (
+    # Google API keys (e.g. leaked into an LLM error message)
+    re.compile(r"AIza[0-9A-Za-z_\-]{30,}"),
+    # Tavily keys
+    re.compile(r"tvly-[0-9A-Za-z]{16,}"),
+    # JWT-shaped tokens
+    re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),
+    # Postgres/MySQL URLs with inline credentials
+    re.compile(r"(postgres(ql)?|mysql)://[^\s:/@]+:[^\s/@]+@"),
+    # key=value / key: value assignments for common credential labels
+    re.compile(
+        r"((?:api[_\-]?key|access[_\-]?token|refresh[_\-]?token|token|secret|password)"
+        r"\s*[:=]\s*[\"']?)([^\s\"',;}]{6,})",
+        re.IGNORECASE,
+    ),
+)
+
+_REDACTED = "[REDACTED]"
+
+
+def redact_secrets(value: Any) -> Any:
+    """Recursively redact credential-shaped strings from response payloads.
+
+    Applied to agent traces before they leave the API: if an LLM provider ever
+    echoes a key (in an error message, for example) it must not reach the
+    client, the UI, or the persisted conversation.
+    """
+    if isinstance(value, str):
+        redacted = value
+        for pattern in _SECRET_PATTERNS:
+            redacted = pattern.sub(
+                lambda m: (m.group(1) + _REDACTED) if m.lastindex else _REDACTED,
+                redacted,
+            )
+        return redacted
+    if isinstance(value, dict):
+        return {k: redact_secrets(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact_secrets(item) for item in value]
+    return value
