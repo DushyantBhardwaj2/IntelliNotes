@@ -1,0 +1,145 @@
+import warnings
+
+warnings.filterwarnings("ignore", message=".*automatic function calling.*")
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from langchain_core.messages import HumanMessage
+
+from app.agent.graph import get_graph
+from app.config import settings
+from app.ingestion import vectorstore
+from app.ingestion.loader import load_pdf_chunks
+from app.schemas import (
+    ChatRequest,
+    ChatResponse,
+    ClearResponse,
+    DeleteResponse,
+    DocumentInfo,
+    UploadResponse,
+)
+
+app = FastAPI(
+    title="IntelliNotes API",
+    description=(
+        "Agentic RAG knowledge assistant: chat over your uploaded PDF notes "
+        "with automatic web-search fallback, grounding verification, and a transparent agent trace."
+    ),
+    version="1.2.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/")
+def root():
+    return {
+        "name": "IntelliNotes API",
+        "docs": "/docs",
+        "endpoints": [
+            "/chat/",
+            "/upload-document/",
+            "/documents",
+            "/documents/{doc_id}",
+            "/health",
+        ],
+    }
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "model": settings.chat_model,
+        "chunks_in_store": vectorstore.count_chunks(),
+    }
+
+
+@app.post("/chat/", response_model=ChatResponse)
+def chat(request: ChatRequest):
+    graph = get_graph()
+    try:
+        result = graph.invoke(
+            {
+                "messages": [HumanMessage(content=request.message)],
+                "question": request.message,
+                "web_enabled": request.web_enabled,
+                "doc_id": request.doc_id,
+            },
+            config={"configurable": {"thread_id": request.session_id}},
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503, detail=f"Agent failed: {exc}"
+        ) from exc
+
+    return ChatResponse(
+        session_id=request.session_id,
+        answer=result.get("answer", ""),
+        grounding_verdict=result.get("grounding_verdict"),
+        trace=result.get("trace", []),
+    )
+
+
+@app.post("/upload-document/", response_model=UploadResponse)
+def upload_document(file: UploadFile = File(...)):
+    filename = file.filename or "document.pdf"
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    pdf_bytes = file.file.read(max_bytes + 1)
+    if len(pdf_bytes) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {settings.max_upload_mb} MB upload limit.",
+        )
+
+    try:
+        chunks = load_pdf_chunks(pdf_bytes, filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not chunks:
+        raise HTTPException(
+            status_code=400,
+            detail="No usable text chunks could be extracted from this PDF.",
+        )
+
+    vectorstore.add_chunks(chunks)
+
+    return UploadResponse(
+        doc_id=chunks[0].metadata["doc_id"],
+        filename=filename,
+        processed_chunks=len(chunks),
+        total_chunks_in_store=vectorstore.count_chunks(),
+    )
+
+
+@app.get("/documents", response_model=list[DocumentInfo])
+def documents():
+    return vectorstore.list_documents()
+
+
+@app.delete("/documents/{doc_id}", response_model=DeleteResponse)
+def delete_document(doc_id: str):
+    deleted = vectorstore.delete_document(doc_id)
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    return DeleteResponse(
+        doc_id=doc_id,
+        deleted_chunks=deleted,
+        remaining_chunks=vectorstore.count_chunks(),
+    )
+
+
+@app.delete("/documents/", response_model=ClearResponse)
+def clear_documents():
+    cleared = vectorstore.clear_all()
+    return ClearResponse(status="cleared", cleared_chunks=cleared)
+
