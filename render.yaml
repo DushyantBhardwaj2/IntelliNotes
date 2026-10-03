@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: intellinotes-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile.backend
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    disk:
+      name: intellinotes-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /data
