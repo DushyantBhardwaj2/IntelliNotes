@@ -1,0 +1,17 @@
+# Keep secrets, local state, and dev noise out of the build context.
+.git
+.gitignore
+.venv
+.pytest_cache
+.freebuff
+.vscode
+.idea
+
+# Never bake secrets or user data into images.
+.env
+data/
+
+backend/tests
+scripts
+*.md
+LICENSE

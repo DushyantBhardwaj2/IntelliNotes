@@ -8,6 +8,7 @@ anti-hallucination refusals, document scoping, memory integrity, and cleanup.
 Run:  python scripts/smoke_test.py
 """
 
+import os
 import sys
 import time
 import uuid
@@ -16,6 +17,8 @@ from pathlib import Path
 import requests
 
 API = "http://localhost:8000"
+API_KEY = os.environ.get("INTELLINOTES_API_KEY", "")
+HEADERS = {"X-API-Key": API_KEY} if API_KEY else {}
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
@@ -104,7 +107,7 @@ REFUSAL_PHRASES = (
 def wait_for_health():
     for _ in range(60):
         try:
-            r = requests.get(f"{API}/health", timeout=5)
+            r = requests.get(f"{API}/health", timeout=5, headers=HEADERS)
             if r.status_code == 200:
                 print("Server healthy:", r.json())
                 return True
@@ -122,7 +125,7 @@ def chat(session_id, message, web_enabled, doc_id=None):
     }
     if doc_id:
         payload["doc_id"] = doc_id
-    r = requests.post(f"{API}/chat/", json=payload, timeout=300)
+    r = requests.post(f"{API}/chat/", json=payload, timeout=300, headers=HEADERS)
     r.raise_for_status()
     return r.json()
 
@@ -151,7 +154,7 @@ def main():
         print("FATAL: server never became healthy")
         sys.exit(1)
 
-    pre_docs = requests.get(f"{API}/documents", timeout=30).json()
+    pre_docs = requests.get(f"{API}/documents", timeout=30, headers=HEADERS).json()
     pre_ids = {d["doc_id"] for d in pre_docs}
     print(f"\nPre-existing documents: {[d['filename'] for d in pre_docs]}")
 
@@ -160,6 +163,7 @@ def main():
         f"{API}/upload-document/",
         files={"file": ("atlas-protocol-guide.pdf", atlas_pdf, "application/pdf")},
         timeout=120,
+        headers=HEADERS,
     )
     r.raise_for_status()
     atlas = r.json()
@@ -169,6 +173,7 @@ def main():
         f"{API}/upload-document/",
         files={"file": ("meridian-finance.pdf", meridian_pdf, "application/pdf")},
         timeout=120,
+        headers=HEADERS,
     )
     r.raise_for_status()
     meridian = r.json()
@@ -292,11 +297,11 @@ def main():
         check("memory integrity check", False, f"error: {exc}")
 
     print("\n--- Cleanup ---")
-    r = requests.delete(f"{API}/documents/{atlas['doc_id']}", timeout=60)
+    r = requests.delete(f"{API}/documents/{atlas['doc_id']}", timeout=60, headers=HEADERS)
     r.raise_for_status()
-    r = requests.delete(f"{API}/documents/{meridian['doc_id']}", timeout=60)
+    r = requests.delete(f"{API}/documents/{meridian['doc_id']}", timeout=60, headers=HEADERS)
     r.raise_for_status()
-    final_docs = requests.get(f"{API}/documents", timeout=30).json()
+    final_docs = requests.get(f"{API}/documents", timeout=30, headers=HEADERS).json()
     final_ids = {d["doc_id"] for d in final_docs}
     check(
         "cleanup: test docs removed, pre-existing store intact",

@@ -2,7 +2,7 @@ import warnings
 
 warnings.filterwarnings("ignore", message=".*automatic function calling.*")
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
 
@@ -10,6 +10,13 @@ from app.agent.graph import get_graph
 from app.config import settings
 from app.ingestion import vectorstore
 from app.ingestion.loader import load_pdf_chunks
+from app.security import (
+    client_identity,
+    make_chat_limiter,
+    make_upload_limiter,
+    require_api_key,
+    sanitize_detail,
+)
 from app.schemas import (
     ChatRequest,
     ChatResponse,
@@ -30,10 +37,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.allowed_origins,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
+
+chat_limiter = make_chat_limiter()
+upload_limiter = make_upload_limiter()
 
 
 @app.get("/")
@@ -60,10 +70,11 @@ def health():
     }
 
 
-@app.post("/chat/", response_model=ChatResponse)
-def chat(request: ChatRequest):
-    graph = get_graph()
+@app.post("/chat/", response_model=ChatResponse, dependencies=[Depends(require_api_key)])
+def chat(request: ChatRequest, request_obj: Request):
+    chat_limiter.check(client_identity(request_obj))
     try:
+        graph = get_graph()
         result = graph.invoke(
             {
                 "messages": [HumanMessage(content=request.message)],
@@ -74,9 +85,8 @@ def chat(request: ChatRequest):
             config={"configurable": {"thread_id": request.session_id}},
         )
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=503, detail=f"Agent failed: {exc}"
-        ) from exc
+        # Full detail goes to server logs; the client gets a generic message.
+        raise HTTPException(status_code=503, detail=sanitize_detail(exc)) from exc
 
     return ChatResponse(
         session_id=request.session_id,
@@ -86,8 +96,13 @@ def chat(request: ChatRequest):
     )
 
 
-@app.post("/upload-document/", response_model=UploadResponse)
-def upload_document(file: UploadFile = File(...)):
+@app.post(
+    "/upload-document/",
+    response_model=UploadResponse,
+    dependencies=[Depends(require_api_key)],
+)
+def upload_document(request: Request, file: UploadFile = File(...)):
+    upload_limiter.check(client_identity(request))
     filename = file.filename or "document.pdf"
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
@@ -126,7 +141,11 @@ def documents():
     return vectorstore.list_documents()
 
 
-@app.delete("/documents/{doc_id}", response_model=DeleteResponse)
+@app.delete(
+    "/documents/{doc_id}",
+    response_model=DeleteResponse,
+    dependencies=[Depends(require_api_key)],
+)
 def delete_document(doc_id: str):
     deleted = vectorstore.delete_document(doc_id)
     if deleted == 0:
@@ -138,7 +157,11 @@ def delete_document(doc_id: str):
     )
 
 
-@app.delete("/documents/", response_model=ClearResponse)
+@app.delete(
+    "/documents/",
+    response_model=ClearResponse,
+    dependencies=[Depends(require_api_key)],
+)
 def clear_documents():
     cleared = vectorstore.clear_all()
     return ClearResponse(status="cleared", cleared_chunks=cleared)

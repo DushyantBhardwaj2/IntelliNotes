@@ -1,0 +1,49 @@
+# IntelliNotes — one command local production stack:
+#   docker compose up --build
+# Backend:  http://localhost:8000  (docs at /docs)
+# Frontend: http://localhost:8501
+#
+# Secrets come from .env (see .env.example). To enable API auth, set API_KEY
+# in .env — the frontend picks it up automatically via INTELLINOTES_API_KEY.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATA_DIR: /srv
+      # Interpolation default keeps local compose runs working without .env.
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8501,http://127.0.0.1:8501}
+    volumes:
+      - intellinotes-data:/srv/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8501:8501"
+    environment:
+      API_BASE: http://backend:8000
+      INTELLINOTES_API_KEY: ${API_KEY:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  intellinotes-data:
+

@@ -1,0 +1,31 @@
+# IntelliNotes backend — FastAPI + LangGraph agent + ChromaDB + SQLite memory.
+# Single-process by design: the checkpointer and vector store are file-backed.
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HOME=/tmp
+
+WORKDIR /srv
+
+# Dependencies first so source edits don't bust the pip layer cache.
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Application code only (tests and docs stay out of the runtime image).
+COPY backend/app ./app
+
+# All persistent state (ChromaDB vectors + SQLite conversation memory) lives
+# under DATA_DIR/data (same layout as a local checkout). Mount a volume here
+# or uploads vanish on restart.
+ENV DATA_DIR=/srv
+RUN mkdir -p /srv/data && chown -R nobody:nogroup /srv/data
+VOLUME /srv/data
+USER nobody
+
+EXPOSE 8000
+
+# --workers 1 is required: SQLite checkpointing and file-backed ChromaDB are
+# not safe for multi-process access. Scale vertically or shard instead.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

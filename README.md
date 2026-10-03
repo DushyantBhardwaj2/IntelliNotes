@@ -5,7 +5,7 @@
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-orange.svg)](https://langchain-ai.github.io/langgraph/)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-VectorStore-red.svg)](https://www.trychroma.com/)
 [![Gemini](https://img.shields.io/badge/Google%20Gemini-Flash--Lite-4285F4.svg)](https://ai.google.dev/)
-[![Tests](https://img.shields.io/badge/pytest-50%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/pytest-64%20passed-brightgreen.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **IntelliNotes** is an advanced **Agentic RAG (Retrieval-Augmented Generation)** knowledge system built with **LangGraph, FastAPI, Streamlit, ChromaDB, Google Gemini Flash-Lite, and Tavily**.
@@ -97,13 +97,15 @@ IntelliNotes/
 │   │   ├── ingestion/             # PDF Processing & Vector Indexing
 │   │   │   ├── loader.py          # Page-preserving PDF parser & chunker
 │   │   │   └── vectorstore.py     # Thread-safe ChromaDB client & CRUD
-│   │   ├── config.py              # Pydantic Settings
+│   │   ├── config.py              # Pydantic Settings (incl. API_KEY, CORS, DATA_DIR)
 │   │   ├── main.py                # FastAPI Application & REST Endpoints
+│   │   ├── security.py            # API-key auth, rate limiter, error sanitizer
 │   │   └── schemas.py             # Pydantic Request/Response Models
 │   ├── requirements.txt           # Backend Dependencies
 │   └── tests/                     # Automated Test Suite (24 unit & integration tests)
 │       ├── test_agent.py          # Routing, Grading & Grounding tests
 │       ├── test_api.py            # FastAPI endpoint integration tests
+│       ├── test_security.py       # Auth, CORS, rate-limit & sanitization tests
 │       ├── test_loader.py         # PDF parsing & page-tracking tests
 │       └── test_vectorstore.py    # Scoping, CRUD & isolation tests
 ├── frontend/
@@ -156,7 +158,7 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 
 ## 🧪 Automated Testing
 
-Run the full pytest suite (50 unit & integration tests, fully mocked — no API cost):
+Run the full pytest suite (64 unit & integration tests, fully mocked — no API cost):
 ```bash
 pytest backend/tests -v
 ```
@@ -171,7 +173,7 @@ The live smoke test generates two synthetic PDFs, exercises page-aware retrieval
 multi-turn follow-ups, honest refusals for absent information, document scoping
 isolation, conversation-memory integrity, and cleans up after itself.
 
-Output (50 tests):
+Output (excerpt of 64 tests):
 ```text
 backend/tests/test_agent.py::test_router_node_notes_path PASSED
 backend/tests/test_agent.py::test_router_node_empty_store_fallback PASSED
@@ -228,6 +230,28 @@ backend/tests/test_vectorstore.py::test_list_and_delete_document PASSED
 | `DELETE` | `/documents/{doc_id}` | Delete a specific document and its vector chunks |
 | `DELETE` | `/documents/` | Clear all documents from the vector database |
 | `GET` | `/health` | Health check returning status and total chunks in store |
+
+---
+
+## 🌍 Deployment
+
+The stack deploys as **two services + one persistent volume**: the FastAPI
+backend (any host with persistent disk — Railway, Render, Fly.io, VPS) and the
+Streamlit frontend (Streamlit Community Cloud or any host).
+
+Production hardening is built in and configured via environment variables:
+- **API-key auth** (`API_KEY` + `X-API-Key` header) on chat, upload, and delete endpoints
+- **Env-driven CORS allowlist** (`CORS_ORIGINS`) instead of wildcard origins
+- **Rate limiting** per caller on `/chat/` and `/upload-document/`
+- **Sanitized 5xx errors** (full detail in server logs, generic message to clients)
+- **Single-worker uvicorn + `DATA_DIR` volume** so vectors and conversation memory survive restarts
+
+👉 Full step-by-step guide, env-var reference, and pre-flight checklist: **[DEPLOY.md](DEPLOY.md)**
+
+Local quickstart with Docker:
+```bash
+docker compose up --build   # backend :8000 · frontend :8501 · named data volume
+```
 
 ---
 

@@ -3,8 +3,25 @@ import uuid
 import requests
 import streamlit as st
 
-API_BASE = os.environ.get("API_BASE", "http://localhost:8000")
+def _env_or_secret(key: str) -> str:
+    """Read config from env vars, falling back to Streamlit Cloud secrets."""
+    value = os.environ.get(key, "")
+    if value:
+        return value
+    try:
+        return st.secrets.get(key, "")  # type: ignore[attr-defined]
+    except Exception:  # no secrets.toml — local dev
+        return ""
+
+
+API_BASE = _env_or_secret("API_BASE") or "http://localhost:8000"
+API_KEY = _env_or_secret("INTELLINOTES_API_KEY")
 REQUEST_TIMEOUT = 240
+
+
+def _auth_headers() -> dict:
+    """Headers sent with every backend request (no-op when auth is disabled)."""
+    return {"X-API-Key": API_KEY} if API_KEY else {}
 
 st.set_page_config(
     page_title="IntelliNotes — Agentic RAG Assistant",
@@ -75,11 +92,11 @@ st.markdown(
 
 
 def api_get(path):
-    return requests.get(f"{API_BASE}{path}", timeout=30)
+    return requests.get(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
 
 
 def api_delete(path):
-    return requests.delete(f"{API_BASE}{path}", timeout=30)
+    return requests.delete(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
 
 
 def render_trace_timeline(trace):
@@ -238,6 +255,7 @@ with st.sidebar:
                     response = requests.post(
                         f"{API_BASE}/upload-document/",
                         files={"file": (uploaded.name, content, "application/pdf")},
+                        headers=_auth_headers(),
                         timeout=120,
                     )
                     response.raise_for_status()
@@ -370,6 +388,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         "web_enabled": web_enabled,
                         "doc_id": st.session_state.selected_doc_id,
                     },
+                    headers=_auth_headers(),
                     timeout=REQUEST_TIMEOUT,
                 )
                 response.raise_for_status()

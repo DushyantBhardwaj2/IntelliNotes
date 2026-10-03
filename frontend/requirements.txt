@@ -1,2 +1,3 @@
-streamlit>=1.36
-requests>=2.32
+# Pinned frontend dependencies (from the verified working environment).
+streamlit==1.63.0
+requests==2.34.2
