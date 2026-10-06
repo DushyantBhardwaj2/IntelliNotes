@@ -14,6 +14,7 @@ def test_root_endpoint():
     data = response.json()
     assert data["name"] == "IntelliNotes API"
     assert "/chat/" in data["endpoints"]
+    assert "/ping" in data["endpoints"]
 
 
 def test_health_endpoint():
@@ -23,6 +24,14 @@ def test_health_endpoint():
         data = response.json()
         assert data["status"] == "ok"
         assert data["chunks_in_store"] == 12
+
+
+def test_ping_endpoint():
+    response = client.get("/ping")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["message"] == "pong"
 
 
 def test_upload_non_pdf_rejected():

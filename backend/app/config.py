@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     rate_limit_chat: str = "10/minute"
     rate_limit_upload: str = "5/minute"
 
+    # Keep-alive self-ping configuration (prevents free-tier hosts like Render from sleeping)
+    keep_alive_enabled: bool = True
+    keep_alive_interval_minutes: int = 10
+    keep_alive_url: str = ""
+
     @property
     def allowed_origins(self) -> list[str]:
         return _parse_origins(self.cors_origins)
@@ -63,6 +68,24 @@ class Settings(BaseSettings):
     @property
     def auth_enabled(self) -> bool:
         return bool(self.api_key.strip())
+
+    @property
+    def resolved_keep_alive_url(self) -> str:
+        """Resolve the target URL for keep-alive self-pings.
+
+        Priority:
+        1. Explicit KEEP_ALIVE_URL setting
+        2. RENDER_EXTERNAL_URL environment variable provided by Render + '/ping'
+        3. Default fallback if running on Render (RENDER environment variable is set)
+        """
+        if self.keep_alive_url.strip():
+            return self.keep_alive_url.strip()
+        render_url = os.environ.get("RENDER_EXTERNAL_URL", "").strip()
+        if render_url:
+            return f"{render_url.rstrip('/')}/ping"
+        if os.environ.get("RENDER"):
+            return "https://intellinotes-backend.onrender.com/ping"
+        return ""
 
     @property
     def data_dir(self) -> Path:

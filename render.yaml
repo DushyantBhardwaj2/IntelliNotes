@@ -13,3 +13,9 @@ services:
     envVars:
       - key: DATA_DIR
         value: /data
+      - key: KEEP_ALIVE_ENABLED
+        value: "true"
+      - key: KEEP_ALIVE_INTERVAL_MINUTES
+        value: "10"
+      - key: KEEP_ALIVE_URL
+        value: "https://intellinotes-backend.onrender.com/ping"

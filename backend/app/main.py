@@ -7,10 +7,13 @@ from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
 
+from contextlib import asynccontextmanager
+
 from app.agent.graph import get_checkpointer, get_graph
 from app.config import settings
 from app.ingestion import vectorstore
 from app.ingestion.loader import load_pdf_chunks
+from app.keep_alive import start_keep_alive, stop_keep_alive
 from app.security import (
     client_identity,
     make_chat_limiter,
@@ -28,13 +31,30 @@ from app.schemas import (
     UploadResponse,
 )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        get_checkpointer()
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).warning("Startup checkpointer initialization notice: %s", exc)
+
+    keep_alive_task = start_keep_alive()
+    try:
+        yield
+    finally:
+        await stop_keep_alive(keep_alive_task)
+
+
 app = FastAPI(
     title="IntelliNotes API",
     description=(
         "Agentic RAG knowledge assistant: chat over your uploaded PDF notes "
         "with automatic web-search fallback, grounding verification, and a transparent agent trace."
     ),
-    version="1.2.0",
+    version="1.3.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -43,14 +63,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type", "X-API-Key"],
 )
-
-@app.on_event("startup")
-def startup_event():
-    try:
-        get_checkpointer()
-    except Exception as exc:  # noqa: BLE001
-        import logging
-        logging.getLogger(__name__).warning("Startup checkpointer initialization notice: %s", exc)
 
 chat_limiter = make_chat_limiter()
 upload_limiter = make_upload_limiter()
@@ -67,6 +79,7 @@ def root():
             "/documents",
             "/documents/{doc_id}",
             "/health",
+            "/ping",
         ],
     }
 
@@ -77,6 +90,14 @@ def health():
         "status": "ok",
         "model": settings.chat_model,
         "chunks_in_store": vectorstore.count_chunks(),
+    }
+
+
+@app.get("/ping")
+def ping():
+    return {
+        "status": "ok",
+        "message": "pong",
     }
 
 

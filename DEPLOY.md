@@ -25,6 +25,7 @@ Two services, one persistent volume, zero secrets in code:
 | `DATA_DIR` | ⚠️ on hosts | Root of persistent state. Must point at a mounted volume, e.g. `/data` |
 | `RATE_LIMIT_CHAT` / `RATE_LIMIT_UPLOAD` | optional | Per-minute limits, `0` disables (defaults 10/min and 5/min) |
 | `CHAT_MODEL` | optional | Override `gemini-3.5-flash-lite` for a fresh free-tier quota bucket |
+| `KEEP_ALIVE_ENABLED` / `KEEP_ALIVE_URL` | optional | Auto-pings public URL every 10 min to prevent free-tier host sleep (enabled by default) |
 
 Set these in your host's dashboard (Railway/Render variables panel, Fly secrets, etc.).
 Never commit `.env`.
