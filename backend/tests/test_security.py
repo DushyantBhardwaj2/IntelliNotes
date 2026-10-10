@@ -111,7 +111,7 @@ class TestRateLimiter:
 
         limiter = RateLimiter(limit=1, window_seconds=0.05)
         limiter.check("caller-a")
-        time.sleep(0.06)
+        time.sleep(0.1)
         limiter.check("caller-a")  # old hit expired; allowed again
 
     def test_chat_endpoint_returns_429_when_exhausted(self):

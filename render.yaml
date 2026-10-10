@@ -13,6 +13,8 @@ services:
     envVars:
       - key: DATA_DIR
         value: /data
+      - key: DATABASE_URL
+        sync: false
       - key: KEEP_ALIVE_ENABLED
         value: "true"
       - key: KEEP_ALIVE_INTERVAL_MINUTES

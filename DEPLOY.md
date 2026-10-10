@@ -4,13 +4,14 @@ Two services, one persistent volume, zero secrets in code:
 
 | Piece | What it is | Where to host |
 |---|---|---|
-| **Backend** | FastAPI + LangGraph agent + ChromaDB + SQLite memory | Any host with **persistent disk** (Railway, Render, Fly.io, VPS) |
-| **Frontend** | Streamlit UI (stateless) | Streamlit Community Cloud (free) or any host |
+| **Backend** | FastAPI + LangGraph agent + ChromaDB + Neon PostgreSQL memory | **Render** (Docker Web Service with auto-deploy on push) |
+| **Frontend** | Modern Next.js UI | **Vercel** (`frontend-next`, automated CI/CD) |
+| **Database** | Serverless PostgreSQL (persistent checkpoints & memory) | **Neon** (`neondb`) |
 
-> ⚠️ **Hard constraint:** the vector store (ChromaDB) and conversation memory
-> (SQLite) are file-backed and the app must run as a **single process**
-> (`--workers 1`). Serverless platforms (Vercel, Lambda) and multi-worker
-> setups will corrupt or lose state. The Docker image already enforces this.
+> 💡 **Production Stack:**
+> - **Backend** runs on Render via `Dockerfile.backend` with automatic continuous deployment on every Git push to `main`.
+> - **Database** runs on Neon PostgreSQL (`DATABASE_URL`), providing resilient conversation checkpointing.
+> - **Frontend** runs on Vercel from the `frontend-next` directory, connected to GitHub for instant deployments.
 
 ---
 
