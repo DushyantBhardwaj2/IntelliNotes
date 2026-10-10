@@ -5,7 +5,10 @@
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-orange.svg)](https://langchain-ai.github.io/langgraph/)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-VectorStore-red.svg)](https://www.trychroma.com/)
 [![Gemini](https://img.shields.io/badge/Google%20Gemini-Flash--Lite-4285F4.svg)](https://ai.google.dev/)
-[![Tests](https://img.shields.io/badge/pytest-64%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/pytest-95%20passed-brightgreen.svg)]()
+[![Frontend: Vercel](https://img.shields.io/badge/Vercel-Live%20Frontend-black.svg?logo=vercel)](https://intellinotes-frontend.vercel.app)
+[![Backend: Render](https://img.shields.io/badge/Render-Live%20Backend-46E3B7.svg?logo=render)](https://intellinotes-backend.onrender.com)
+[![Database: Neon](https://img.shields.io/badge/Neon-Postgres%20Memory-00E599.svg?logo=postgresql)](https://neon.tech)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **IntelliNotes** is an advanced **Agentic RAG (Retrieval-Augmented Generation)** knowledge system built with **LangGraph, FastAPI, Streamlit, ChromaDB, Google Gemini Flash-Lite, and Tavily**.
