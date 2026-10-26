@@ -74,7 +74,8 @@ flowchart TD
 
 6. **🧯 Graceful Degradation**:
    - If the routing or grading model is temporarily unavailable (quota, network, 5xx), the agent degrades to deterministic keyword routing and safe grading defaults instead of failing the conversation.
-   - Uploads are size-limited (HTTP 413) and sparse/empty PDFs are rejected cleanly (HTTP 400) rather than crashing the API.
+   - File uploads exceeding the size limit return HTTP 413, while empty or insufficient-content PDFs trigger a controlled HTTP 400 response without causing an API crash.
+  
 
 ---
 
